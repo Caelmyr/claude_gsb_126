@@ -181,12 +181,17 @@ class NameNode:
 
     def query_logs(self, level=None, source=None, user=None, q=None,
                    limit=100, offset=0):
+        # level 为 None 表示未传该参数（不过滤级别）；
+        # 为空列表/空串表示显式选择了“无级别”，结果应为空集。
         if isinstance(level, str):
-            level = split_multi(level, config.LOG_LEVEL_SEP) or None
+            # 同时接受配置分隔符（|）与逗号，避免前后端分隔符不一致导致多选失效
+            level = split_multi(level.replace(",", config.LOG_LEVEL_SEP),
+                                config.LOG_LEVEL_SEP)
         with self.meta.lock:
             items = list(self.meta.get("logs").get("items", []))
         items.reverse()
-        if level:
+        if level is not None:
+            # 同一过滤字段内为“或”：命中级别的并集
             items = [i for i in items if i["level"] in level]
         if source:
             items = [i for i in items if i["source"] == source]

@@ -777,7 +777,13 @@ def api_logs(ctx):
 
 @route("GET", "/api/logs/export")
 def api_logs_export(ctx):
-    data = ctx.nn.query_logs(limit=config.LOG_MAX_ENTRIES)
+    # 导出与列表查询完全相同的过滤条件（级别内 OR，各条件间 AND）
+    data = ctx.nn.query_logs(
+        level=ctx.query.get("level") or None,
+        source=ctx.query.get("source") or None,
+        user=ctx.query.get("user") or None,
+        q=ctx.query.get("q") or None,
+        limit=config.LOG_MAX_ENTRIES)
     import csv
     import io
     buf = io.StringIO()
@@ -787,7 +793,8 @@ def api_logs_export(ctx):
         w.writerow([fmt_ts(it["ts"]), it["level"], it["source"],
                     it.get("user", ""), it.get("action", ""),
                     it.get("target", ""), it.get("detail", "")])
-    content = ("ts,level,source,user,action,target,detail\n"
+    # BOM 让 Excel 正确识别 UTF-8 中文
+    content = ("﻿ts,level,source,user,action,target,detail\n"
                + buf.getvalue()).encode("utf-8")
     ctx.send_bytes(content, "text/csv; charset=utf-8", 200,
                    {"Content-Disposition": 'attachment; filename="dfsvs-logs.csv"'})
