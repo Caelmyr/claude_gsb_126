@@ -178,7 +178,7 @@ ROLE_CAPABILITIES = {
 # ----------------------------------------------------------------------------
 LOG_MAX_ENTRIES = 5000                  # logs.json 中最多保留的条数
 LOG_LEVELS = ["DEBUG", "INFO", "WARN", "ERROR", "FATAL"]
-LOG_LEVEL_SEP = "|"                     # 日志级别多选过滤的分隔符
+LOG_LEVEL_SEP = ","                     # 日志级别多选过滤的分隔符（与前端约定一致）
 LOG_SOURCES = ["namenode", "datanode", "api", "auth", "fs", "block", "version",
                "recovery", "gc", "sync", "upload", "download", "sim"]
 

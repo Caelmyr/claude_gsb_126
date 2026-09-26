@@ -777,7 +777,12 @@ def api_logs(ctx):
 
 @route("GET", "/api/logs/export")
 def api_logs_export(ctx):
-    data = ctx.nn.query_logs(limit=config.LOG_MAX_ENTRIES)
+    # 与 /api/logs 使用同一套过滤参数，保证导出内容与页面当前过滤结果一致
+    data = ctx.nn.query_logs(level=ctx.query.get("level") or None,
+                             source=ctx.query.get("source") or None,
+                             user=ctx.query.get("user") or None,
+                             q=ctx.query.get("q") or None,
+                             limit=config.LOG_MAX_ENTRIES)
     import csv
     import io
     buf = io.StringIO()

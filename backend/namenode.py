@@ -182,7 +182,9 @@ class NameNode:
     def query_logs(self, level=None, source=None, user=None, q=None,
                    limit=100, offset=0):
         if isinstance(level, str):
-            level = split_multi(level, config.LOG_LEVEL_SEP) or None
+            # 兼容旧的 "|" 分隔符；前后端统一以 LOG_LEVEL_SEP（","）分隔多选级别
+            level = split_multi(level.replace("|", config.LOG_LEVEL_SEP),
+                                config.LOG_LEVEL_SEP) or None
         with self.meta.lock:
             items = list(self.meta.get("logs").get("items", []))
         items.reverse()

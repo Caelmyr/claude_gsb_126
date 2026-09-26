@@ -14,6 +14,9 @@
   .lv-WARN { color: var(--warn); } .lv-ERROR { color: var(--bad); } .lv-FATAL { color:#ff7b72; }
   tr.log-main { cursor:pointer; }
   tr.log-detail-row td { padding:0 !important; border-bottom:1px solid var(--border); }
+  .af-chip { cursor:pointer; user-select:none; padding:3px 9px; }
+  .af-chip:hover { color:var(--bad); }
+  .af-chip b { margin-left:3px; }
 </style>
 </head>
 <body>
@@ -36,6 +39,7 @@
         <div class="toolbar" style="margin-bottom:8px">
           <span class="small muted">级别</span>
           <span id="lv-toggles"></span>
+          <span class="small muted">（多选之间为"或"；与下方来源 / 用户 / 关键字之间为"与"）</span>
         </div>
         <div class="toolbar" style="margin-bottom:0">
           <label class="fl">来源
@@ -55,6 +59,14 @@
           <div class="spacer" style="flex:1"></div>
           <button class="btn sm" id="btn-export">⇩ 导出 CSV</button>
           <button class="btn sm danger" id="btn-clear">清空日志</button>
+        </div>
+        <!-- 生效条件概览条：每个条件可单独撤掉 -->
+        <div id="active-filters" style="display:none;margin-top:10px;padding-top:10px;border-top:1px dashed var(--border-soft)">
+          <div class="toolbar" style="margin-bottom:0;gap:6px">
+            <span class="small muted">生效条件（级别内为"或"，条件间为"与"）：</span>
+            <span id="af-chips" style="display:inline-flex;gap:6px;flex-wrap:wrap"></span>
+            <button class="btn xs" id="af-clear">全部清除</button>
+          </div>
         </div>
       </div>
 
@@ -124,25 +136,67 @@ async function fillFilterOptions() {
 }
 
 // ------------------------------------------------------------------ 加载
-async function load() {
+// 当前过滤条件（查询与导出共用，保证二者一致）
+function buildParams() {
   const params = new URLSearchParams();
   if (activeLevels.size && activeLevels.size < LEVELS.length)
     params.set("level", [...activeLevels].join(","));
   const src = document.getElementById("f-source").value;
   const usr = document.getElementById("f-user").value;
   const q = document.getElementById("f-q").value.trim();
-  const limit = +document.getElementById("f-limit").value;
   if (src) params.set("source", src);
   if (usr) params.set("user", usr);
   if (q) params.set("q", q);
+  return params;
+}
+
+async function load() {
+  const limit = +document.getElementById("f-limit").value;
+  renderActiveFilters();
+  // 级别全部取消勾选 = 不匹配任何日志，直接渲染空表，不必发请求
+  if (!activeLevels.size) {
+    lastTotal = 0;
+    renderLogs([], limit);
+    renderLevelStats();
+    return;
+  }
+  const params = buildParams();
   params.set("limit", limit);
   params.set("offset", offset);
   try {
     const d = await api("GET", "/api/logs?" + params.toString());
     lastTotal = d.total;
     renderLogs(d.items, limit);
-    renderLevelStats(d);
+    renderLevelStats();
   } catch (e) { toast(e.message, "bad"); }
+}
+
+// 生效条件概览条：展示当前过滤组合，每个条件可单独撤掉
+function renderActiveFilters() {
+  const src = document.getElementById("f-source").value;
+  const usr = document.getElementById("f-user").value;
+  const q = document.getElementById("f-q").value.trim();
+  const chips = [];
+  if (!activeLevels.size)
+    chips.push({ label: "级别：全部停用（不匹配任何日志）",
+                 clear: () => { activeLevels = new Set(LEVELS); renderToggles(); } });
+  else if (activeLevels.size < LEVELS.length)
+    chips.push({ label: "级别：" + [...activeLevels].join(" 或 "),
+                 clear: () => { activeLevels = new Set(LEVELS); renderToggles(); } });
+  if (src) chips.push({ label: "来源：" + src,
+                        clear: () => document.getElementById("f-source").value = "" });
+  if (usr) chips.push({ label: "用户：" + usr,
+                        clear: () => document.getElementById("f-user").value = "" });
+  if (q)   chips.push({ label: `关键字："${q}"`,
+                        clear: () => document.getElementById("f-q").value = "" });
+  document.getElementById("active-filters").style.display = chips.length ? "" : "none";
+  document.getElementById("af-chips").innerHTML = chips.map((c, i) =>
+    `<span class="chip af-chip" data-i="${i}" title="点击移除该条件">${esc(c.label)}<b>×</b></span>`).join("");
+  document.querySelectorAll(".af-chip").forEach(el => el.onclick = () => {
+    chips[+el.dataset.i].clear();
+    offset = 0;
+    load();
+  });
 }
 
 function renderLogs(items, limit) {
@@ -195,12 +249,28 @@ function renderLevelStats(d) {
 // ------------------------------------------------------------------ 操作
 document.getElementById("btn-query").onclick = () => { offset = 0; load(); };
 document.getElementById("f-q").onkeydown = (e) => { if (e.key === "Enter") { offset = 0; load(); } };
+// 下拉条件改动即生效，保证概览条与表格始终一致
+document.getElementById("f-source").onchange = () => { offset = 0; load(); };
+document.getElementById("f-user").onchange = () => { offset = 0; load(); };
+document.getElementById("f-limit").onchange = () => { offset = 0; load(); };
+document.getElementById("af-clear").onclick = () => {
+  activeLevels = new Set(LEVELS);
+  document.getElementById("f-source").value = "";
+  document.getElementById("f-user").value = "";
+  document.getElementById("f-q").value = "";
+  renderToggles();
+  offset = 0;
+  load();
+};
 document.getElementById("pg-prev").onclick = () => {
   offset = Math.max(0, offset - (+document.getElementById("f-limit").value)); load(); };
 document.getElementById("pg-next").onclick = () => {
   offset += +document.getElementById("f-limit").value; load(); };
 document.getElementById("btn-export").onclick = () => {
-  location.href = "/api/logs/export?token=" + encodeURIComponent(getToken());
+  // 导出与页面当前过滤条件保持一致
+  const params = buildParams();
+  params.set("token", getToken());
+  location.href = "/api/logs/export?" + params.toString();
 };
 document.getElementById("btn-clear").onclick = () =>
   confirmDlg("清空全部系统日志？该操作不可恢复（将记录一条清空审计）。", async () => {
